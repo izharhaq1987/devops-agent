@@ -1,0 +1,10 @@
+services:
+  devops-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: devops-agent
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+

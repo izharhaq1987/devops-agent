@@ -1,0 +1,10 @@
+# General
+.DS_Store
+*.log
+.env
+# Python
+__pycache__/
+# Node
+node_modules/
+# Docker
+docker/*.env
