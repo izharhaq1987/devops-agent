@@ -1,1 +1,1 @@
-# devops-agent
+# devops-agent — GPT Triggers CI/CD
