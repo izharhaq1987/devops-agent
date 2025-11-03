@@ -1,12 +1,21 @@
-- name: Test SSH connection
-  env:
-    SSH_HOST: ${{ secrets.SSH_HOST }}
-    SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-    SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-  run: |
-    set -e
-    mkdir -p ~/.ssh
-    echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-    chmod 600 ~/.ssh/id_rsa
-    ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-    ssh -o StrictHostKeyChecking=no "$SSH_USERNAME@$SSH_HOST" "echo '✅ SSH connection successful from GitHub Actions!'"
+name: SSH Connectivity Test
+on:
+  workflow_dispatch:
+
+jobs:
+  ssh_test:
+    runs-on: self-hosted
+    steps:
+      - name: Test SSH connection
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -T 15 -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -o StrictHostKeyChecking=yes "$SSH_USERNAME@$SSH_HOST" "echo '✅ SSH connection successful from GitHub Actions!'"
