@@ -1,83 +1,12 @@
-name: Deploy
-
-on:
-  workflow_dispatch:
-    inputs:
-      env:
-        description: "Environment (staging|production)"
-        required: true
-        default: "staging"
-      ref:
-        description: "Git ref to record (branch/tag/sha)"
-        required: true
-        default: "main"
-  repository_dispatch:
-    types: [gpt-deploy]
-
-permissions:
-  contents: read
-
-jobs:
-  deploy:
-    name: Build & Deploy
-    runs-on: self-hosted
-    environment: ${{ inputs.env || github.event.client_payload.env || 'production' }}
-
-    steps:
-      - name: Resolve inputs
-        id: args
-        shell: bash
-        run: |
-          ENV="${{ inputs.env || github.event.client_payload.env || 'production' }}"
-          REF="${{ inputs.ref || github.event.client_payload.ref || 'main' }}"
-          echo "env=$ENV"  >> "$GITHUB_OUTPUT"
-          echo "ref=$REF"  >> "$GITHUB_OUTPUT"
-          echo "job_id=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-
-      - name: Runner sanity (Docker present?)
-        shell: bash
-        run: |
-          echo "Runner labels: ${{ join(runner.labels, ',') }}"
-          docker --version
-          docker compose version || true
-
-      - name: Pull latest image
-        shell: bash
-        run: docker pull izharhaq86/devops-agent:latest
-
-      - name: Stop & remove old container (if any)
-        shell: bash
-        run: docker rm -f devops-agent || true
-
-      - name: Run container
-        shell: bash
-        run: |
-          docker run -d \
-            --name devops-agent \
-            -p 8000:8000 \
-            --restart unless-stopped \
-            izharhaq86/devops-agent:latest
-
-      - name: Health check
-        shell: bash
-        run: |
-          for i in {1..10}; do
-            if curl -fsS http://localhost:8000/ >/dev/null; then
-              echo "Service healthy"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::Health check failed — container logs follow"
-          docker logs --tail=200 devops-agent || true
-          exit 1
-
-      - name: Summary
-        shell: bash
-        run: |
-          {
-            echo "✅ Deployed \`izharhaq86/devops-agent:latest\` on self-hosted runner"
-            echo "Environment: ${{ steps.args.outputs.env }}"
-            echo "Ref:        ${{ steps.args.outputs.ref }}"
-            echo "Job ID:     ${{ steps.args.outputs.job_id }}"
-          } >> "$GITHUB_STEP_SUMMARY"
+- name: Test SSH connection
+  env:
+    SSH_HOST: ${{ secrets.SSH_HOST }}
+    SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+    SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+  run: |
+    set -e
+    mkdir -p ~/.ssh
+    echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    chmod 600 ~/.ssh/id_rsa
+    ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+    ssh -o StrictHostKeyChecking=no "$SSH_USERNAME@$SSH_HOST" "echo '✅ SSH connection successful from GitHub Actions!'"
