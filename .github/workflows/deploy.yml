@@ -42,13 +42,18 @@ jobs:
           echo "Runner labels: ${{ join(runner.labels, ',') }}"
           docker --version
           docker compose version
+      
+       - name: Pull latest image
+         run: |
+         docker pull izharhaq86/devops-agent:latest
 
       # ⛔ SSH/known_hosts steps removed — not needed on self-hosted runner
 
       - name: Build & run (Docker Compose)
         shell: bash
-        run: |
-          docker compose -f docker/docker-compose.yml up -d --build
+        - name: Run container from pulled image
+          run: |
+          docker run -d -p 8000:8000 --name devops-agent izharhaq86/devops-agent:latest
 
       - name: Health check
         shell: bash
