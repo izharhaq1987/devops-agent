@@ -6,7 +6,7 @@ on:
       env:
         description: "Environment (staging|production)"
         required: true
-        default: "production"
+        default: "staging"
       ref:
         description: "Git ref to deploy (branch/tag/sha)"
         required: true
@@ -19,52 +19,48 @@ permissions:
 
 jobs:
   deploy:
-    name: Build & Deploy
-    runs-on: ubuntu-latest
-
-    # Map to GitHub Environment for secrets & approvals
+    runs-on: self-hosted
     environment: ${{ inputs.env || github.event.client_payload.env || 'production' }}
 
     steps:
-      - name: Resolve inputs
-        id: args
-        run: |
-          ENV="${{ inputs.env || github.event.client_payload.env || 'production' }}"
-          REF="${{ inputs.ref || github.event.client_payload.ref || 'main' }}"
-          echo "env=$ENV" >> $GITHUB_OUTPUT
-          echo "ref=$REF" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v4
+
+      - name: Build & run (Docker Compose)
+        run: docker compose -f docker/docker-compose.yml up -d --build
+
+      - name: Health check
+        run: curl -fsS http://localhost:8000/ || { docker logs devops-agent || true; exit 1; }
 
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.args.outputs.ref }}
 
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Add known_hosts
+      - name: Runner sanity (Docker present?)
+        shell: bash
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H "${{ secrets.PROD_SERVER_HOST }}" >> ~/.ssh/known_hosts
+          echo "Runner labels: ${{ join(runner.labels, ',') }}"
+          docker --version
+          docker compose version
 
-      - name: Copy repo to server (optional rsync)
-        if: ${{ false }} # disabled by default; deploy script does a git pull
-        run: |
-          rsync -az --delete -e "ssh -p ${{ secrets.PROD_SERVER_PORT }}" . \
-            ${{ secrets.PROD_SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }}:/opt/devops-agent
+      # ⛔ SSH/known_hosts steps removed — not needed on self-hosted runner
 
-      - name: Run deploy script remotely
-        env:
-          ENVIRONMENT: ${{ steps.args.outputs.env }}
-          REF: ${{ steps.args.outputs.ref }}
-          REPO_SSH_URL: "git@github.com:${{ github.repository }}.git"
+      - name: Build & run (Docker Compose)
+        shell: bash
         run: |
-          ssh -p "${{ secrets.PROD_SERVER_PORT }}" \
-            ${{ secrets.PROD_SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} \
-            "bash -lc 'export REF=${REF} REPO_SSH_URL=${REPO_SSH_URL}; \
-              cd /opt/devops-agent || true; \
-              curl -sSfL https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.args.outputs.ref }}/infra/deploy.sh -o /tmp/deploy.sh; \
-              chmod +x /tmp/deploy.sh; \
-              APP_DIR=/opt/devops-agent /tmp/deploy.sh ${ENVIRONMENT}'"
+          docker compose -f docker/docker-compose.yml up -d --build
+
+      - name: Health check
+        shell: bash
+        run: |
+          curl -fsS http://localhost:8000/ || { echo "Service unhealthy — showing logs"; docker logs devops-agent || true; exit 1; }
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "✅ Deployed on self-hosted runner"
+            echo "Environment: ${{ steps.args.outputs.env }}"
+            echo "Ref:        ${{ steps.args.outputs.ref }}"
+            echo "Job ID:     ${{ steps.args.outputs.job_id }}"
+          } >> "$GITHUB_STEP_SUMMARY"
