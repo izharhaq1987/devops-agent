@@ -25,13 +25,14 @@ jobs:
           df -h /
           EOF
 
-   - name: Copy test file to remote server
-     env:
-       SSH_HOST: ${{ secrets.SSH_HOST }}
-       SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-     run: |
-       mkdir -p ~/.ssh
-       echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-       chmod 600 ~/.ssh/id_rsa
-       rsync -avz -e "ssh -o StrictHostKeyChecking=no" test.txt "$SSH_USERNAME@$SSH_HOST:~/deployments/app/"
+      - name: Deploy project files to remote server
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./ "$SSH_USERNAME@$SSH_HOST:~/deployments/app/" --exclude '.git' --exclude '.github'
+
