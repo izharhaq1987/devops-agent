@@ -18,4 +18,10 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -T 15 -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh -o StrictHostKeyChecking=yes "$SSH_USERNAME@$SSH_HOST" "echo '✅ SSH connection successful from GitHub Actions!'"
+          ssh -o StrictHostKeyChecking=yes "$SSH_USERNAME@$SSH_HOST" <<'EOF'
+          echo "✅ SSH connection successful."
+          echo "📦 Checking system uptime and disk space..."
+          uptime
+          df -h /
+          EOF
+
