@@ -14,6 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Step 3: guard inputs + correct ssh-keyscan usage
       - name: Prepare SSH key and known_hosts
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -21,20 +22,30 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           set -euo pipefail
+
+          # ── Guards ───────────────────────────────────────────────────────────────
+          [ -n "${SSH_HOST:-}" ] || { echo "SSH_HOST is empty"; exit 1; }
+          # Prevent embedding :port in SSH_HOST (port must be separate in SSH_PORT)
+          case "$SSH_HOST" in *:*) echo "SSH_HOST must not include :port; set SSH_PORT instead"; exit 1;; esac
+
+          # ── SSH material ────────────────────────────────────────────────────────
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           rm -f ~/.ssh/id_rsa ~/.ssh/id_rsa.pub || true
-          ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
-      - name: Test SSH connection
+          echo "→ Keyscanning $SSH_HOST on port ${SSH_PORT:-22}"
+          ssh-keyscan -p "${SSH_PORT:-22}" -T 15 -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Test SSH connection (verbose)
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           set -euo pipefail
-          echo "→ Testing SSH access to $SSH_USERNAME@$SSH_HOST on port ${SSH_PORT:-22}"
+          [ -n "${SSH_USERNAME:-}" ] || { echo "SSH_USERNAME is empty"; exit 1; }
+          echo "→ Testing $SSH_USERNAME@$SSH_HOST on port ${SSH_PORT:-22}"
           ssh -vvv \
             -p "${SSH_PORT:-22}" \
             -i ~/.ssh/id_ed25519 \
