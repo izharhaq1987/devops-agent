@@ -12,7 +12,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up SSH key & known_hosts
+      - name: Prepare SSH key and known_hosts
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -27,32 +27,38 @@ jobs:
       - name: Test SSH connection
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "echo OK"
+          [ -n "${SSH_HOST:-}" ] || { echo "SSH_HOST is empty"; exit 1; }
+          [ -n "${SSH_USERNAME:-}" ] || { echo "SSH_USERNAME is empty"; exit 1; }
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$SSH_USERNAME@$SSH_HOST" "echo OK"
 
-      - name: Sync files to remote
+      - name: Sync files to remote (rsync)
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
         run: |
           set -euo pipefail
           rsync -az --delete \
-            --exclude '.git' --exclude 'backups' \
+            --exclude '.git' \
+            --exclude 'backups' \
             -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
-            . "$SSH_USER@$SSH_HOST:~/deployments/app/"
+            . "$SSH_USERNAME@$SSH_HOST:~/deployments/app/"
 
       - name: Remote deploy & health check
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" <<'EOF'
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "$SSH_USERNAME@$SSH_HOST" <<'EOF'
           set -euo pipefail
           cd ~/deployments/app
           docker compose pull || true
           docker compose up -d --build
+          # simple health check (adjust URL/port as needed)
           curl -fsS http://127.0.0.1:8000/ >/dev/null
+          echo "Health check OK"
           EOF
