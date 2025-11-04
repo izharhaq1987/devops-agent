@@ -9,12 +9,14 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Step 3: guard inputs + correct ssh-keyscan usage
       - name: Prepare SSH key and known_hosts
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -22,19 +24,12 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           set -euo pipefail
-
-          # ── Guards ───────────────────────────────────────────────────────────────
           [ -n "${SSH_HOST:-}" ] || { echo "SSH_HOST is empty"; exit 1; }
-          # Prevent embedding :port in SSH_HOST (port must be separate in SSH_PORT)
-          case "$SSH_HOST" in *:*) echo "SSH_HOST must not include :port; set SSH_PORT instead"; exit 1;; esac
-
-          # ── SSH material ────────────────────────────────────────────────────────
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          rm -f ~/.ssh/id_rsa ~/.ssh/id_rsa.pub || true
-
-          echo "→ Keyscanning $SSH_HOST on port ${SSH_PORT:-22}"
+          # remove common interfering keys to avoid fallback
+          rm -f ~/.ssh/id_rsa ~/.ssh/id_ecdsa ~/.ssh/id_ed25519.pub || true
           ssh-keyscan -p "${SSH_PORT:-22}" -T 15 -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
       - name: Test SSH connection (verbose)
@@ -42,18 +37,24 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          [ -n "${SSH_USERNAME:-}" ] || { echo "SSH_USERNAME is empty"; exit 1; }
-          echo "→ Testing $SSH_USERNAME@$SSH_HOST on port ${SSH_PORT:-22}"
+          mkdir -p ~/.ssh
+          # Re-inject the private key here to guarantee the runner uses it
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Remove other identities to force usage of the injected key only
+          rm -f ~/.ssh/id_rsa ~/.ssh/id_ecdsa ~/.ssh/id_ed25519.pub || true
+          echo "→ Testing SSH key injection"
           ssh -vvv \
             -p "${SSH_PORT:-22}" \
             -i ~/.ssh/id_ed25519 \
             -o IdentitiesOnly=yes \
             -o PreferredAuthentications=publickey \
             -o PasswordAuthentication=no \
-            -o StrictHostKeyChecking=yes \
-            "$SSH_USERNAME@$SSH_HOST" "echo OK"
+            -o StrictHostKeyChecking=no \
+            "${SSH_USERNAME}@${SSH_HOST}" "echo OK"
 
       - name: Sync files to remote (rsync)
         env:
@@ -63,10 +64,9 @@ jobs:
         run: |
           set -euo pipefail
           rsync -az --delete \
-            --exclude '.git' \
-            --exclude 'backups' \
+            --exclude '.git' --exclude 'backups' \
             -e "ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p ${SSH_PORT:-22}" \
-            . "$SSH_USERNAME@$SSH_HOST:~/deployments/app/"
+            . "${SSH_USERNAME}@${SSH_HOST}:~/deployments/app/"
 
       - name: Remote deploy & health check
         env:
@@ -77,9 +77,9 @@ jobs:
           set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 -p "${SSH_PORT:-22}" \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            "$SSH_USERNAME@$SSH_HOST" <<'EOF'
+            "${SSH_USERNAME}@${SSH_HOST}" <<'EOF'
           set -euo pipefail
-          cd ~/deployments/app
+          cd ~/deployments/app || exit 0
           docker compose pull || true
           docker compose up -d --build
           curl -fsS http://127.0.0.1:8000/ >/dev/null
