@@ -1,38 +1,70 @@
-name: SSH Connectivity Test
+name: Deploy (Self-Hosted)
+
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  ssh_test:
+  deploy:
     runs-on: self-hosted
-    steps:
-      - name: Test SSH connection
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+    defaults:
+      run:
         shell: bash
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up SSH key & known_hosts
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -T 15 -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh -o StrictHostKeyChecking=yes "$SSH_USERNAME@$SSH_HOST" <<'EOF'
-          echo "✅ SSH connection successful."
-          echo "📦 Checking system uptime and disk space..."
-          uptime
-          df -h /
-          EOF
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
-      - name: Deploy project files to remote server
+      - name: Test SSH connection
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./ "$SSH_USERNAME@$SSH_HOST:~/deployments/app/" --exclude '.git' --exclude '.github'
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+    # Remove/ignore any RSA keys that cause fallback
+          rm -f ~/.ssh/id_rsa ~/.ssh/id_rsa.pub || true
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "echo OK"
 
+      - name: Sync files to remote
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude 'backups' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" \
+            . "$SSH_USER@$SSH_HOST:~/deployments/app/"
+
+      - name: Remote deploy (compose)
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" <<'EOF'
+          set -euo pipefail
+          cd ~/deployments/app
+          docker compose pull || true
+          docker compose up -d --build || true
+          EOF
+
+      - name: Health check
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" \
+            "curl -fsS http://127.0.0.1:8000/ >/dev/null"
