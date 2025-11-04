@@ -16,23 +16,31 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           set -euo pipefail
+          : "${SSH_HOST:?SSH_HOST is empty}"
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           rm -f ~/.ssh/id_rsa ~/.ssh/id_rsa.pub || true
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
-      - name: Test SSH connection
+      - name: Test SSH connection (verbose)
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           set -euo pipefail
-          [ -n "${SSH_HOST:-}" ] || { echo "SSH_HOST is empty"; exit 1; }
-          [ -n "${SSH_USERNAME:-}" ] || { echo "SSH_USERNAME is empty"; exit 1; }
-          ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+          : "${SSH_USERNAME:?SSH_USERNAME is empty}"
+          : "${SSH_HOST:?SSH_HOST is empty}"
+          echo "→ Trying $SSH_USERNAME@$SSH_HOST port ${SSH_PORT:-22}"
+          ssh -vvv \
+            -p "${SSH_PORT:-22}" \
+            -i ~/.ssh/id_ed25519 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
             "$SSH_USERNAME@$SSH_HOST" "echo OK"
 
       - name: Sync files to remote (rsync)
