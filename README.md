@@ -22,3 +22,15 @@ This repository demonstrates my DevOps automation expertise — including CI/CD 
 - Verified Nginx container running on port 8000
 - Health check confirmed: **OK**
 - Remote deploy & health check completed without errors
+
+## 📸 Screenshots
+
+**1. CI/CD Workflow Success**
+![Workflow Success](images/workflow_success.png)
+
+**2. Running Nginx Container**
+![Nginx Running](images/Nginx_welcome_page.png)
+
+**3. Docker Compose Success**
+![Docker Compose Success](images/docker_compose_success.png)
+
