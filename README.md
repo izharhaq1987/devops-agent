@@ -17,3 +17,8 @@ This repository demonstrates my DevOps automation expertise — including CI/CD 
 - **Post-Deploy Health Check:** Confirms the deployed service is running as expected.  
 - **Rollback Safety:** Backup workflows allow quick restoration if deployment fails.
 
+## ✅ Deployment Verification
+- CI/CD pipeline successfully deployed via GitHub Actions (Self-Hosted Runner)
+- Verified Nginx container running on port 8000
+- Health check confirmed: **OK**
+- Remote deploy & health check completed without errors
